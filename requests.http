@@ -1,41 +1,74 @@
+@baseUrl = http://127.0.0.1:5000
+@contentType = application/json
+
+# Variabel untuk menyimpan token (VS Code REST Client mendukung @name)
+# Ganti token manual di bawah jika variabel tidak jalan di versi extension Anda.
+
+### ------------------------------------------------------------
 ### 1. Registrasi Pengguna Baru
-POST http://127.0.0.1:5000/auth/register
-Content-Type: application/json
+### ------------------------------------------------------------
+POST {{baseUrl}}/auth/register
+Content-Type: {{contentType}}
 
 {
-    "email": "test-user@example.com",
-    "password": "password123"
+    "email": "user_test_01@example.com",
+    "password": "password_rahasia_123"
 }
 
-### -----------------------------------
-### 2. Login dengan Kredensial yang Benar
-POST http://127.0.0.1:5000/auth/login
-Content-Type: application/json
+### ------------------------------------------------------------
+### 2. Login (Dapatkan Token JWT)
+### ------------------------------------------------------------
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
 
 {
-    "email": "test-user@example.com",
-    "password": "password123"
+    "email": "user_test_01@example.com",
+    "password": "password_rahasia_123"
 }
 
-### -----------------------------------
-### 3. Login (Jalankan ini dulu untuk dapat token)
-POST http://127.0.0.1:5000/auth/login
-Content-Type: application/json
+### Simpan Token dari Response di atas ke variabel ini (Manual Copy-Paste jika perlu)
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2NDA1ODg1NiwianRpIjoiNTI5MTQyNTMtOWE0OS00YmYxLWIyMzEtYjQ3MDExNDBjZTE1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6ImZlYWZmZmZmLWViNGMtNGI0NC1iYTZjLTI2MmY0NTYyMmZjMiIsIm5iZiI6MTc2NDA1ODg1NiwiY3NyZiI6IjJlMzgzNTQ1LTk0YTMtNGE5Yi1iNmE5LWU1OTg3NmNhMjUyMSIsImV4cCI6MTc2NDA1OTc1Nn0.PxtdHcOWp-R_-lSOIUIaWM4nuQVNbWfVLZtSE5LQTOg
 
-{
-    "email": "test-user@example.com",
-    "password": "password123"
-}
 
-### -----------------------------------
-### 4. Cek History (Harus Kosong)
-### GANTI "TOKEN_ANDA_DISINI" dengan token dari #3
-GET http://127.0.0.1:5000/api/history
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MzQzNDc0MiwianRpIjoiOWE5ODFjZDktNTA2Zi00OTYzLWE3MmYtMDNlOWQ0OWJmOGI1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6ImI2ZThmMGQxLWEwN2YtNGI1Ni04NTM1LTA5MjVjYWNjYWJjNiIsIm5iZiI6MTc2MzQzNDc0MiwiY3NyZiI6IjEzNWQ1MGY3LTM2ZDctNDcwZi1iZTZmLWI4NjhlNGNlYmJiMCIsImV4cCI6MTc2MzQzNTY0Mn0.Kz8Q8xAU5wFbXVPjG26EnApEcZQw-1IWVRy5ATYCPJY
+### ------------------------------------------------------------
+### 3. Cek Profil / History (Tes Token)
+### ------------------------------------------------------------
+GET {{baseUrl}}/api/history
+Authorization: Bearer {{authToken}}
 
-### -----------------------------------
-### 5. Coba Upload (Harus Berhasil)
-### GANTI "TOKEN_ANDA_DISINI" dengan token dari #3
-### CATATAN: Ini tidak akan berhasil di REST Client, 
-### karena kita butuh upload file multi-part.
-### Kita tes GET dulu.
+
+### ------------------------------------------------------------
+### 4. Upload Audio (Memicu Celery Worker)
+### ------------------------------------------------------------
+# CATATAN: Ganti path file di bawah dengan lokasi file audio asli di PC Anda.
+# Gunakan path relatif atau absolut tanpa spasi jika memungkinkan.
+# Jika file ada di root folder proyek, cukup gunakan < ./namafile.mp3
+POST {{baseUrl}}/api/analysis/audio
+Authorization: Bearer {{authToken}}
+Content-Type: multipart/form-data; boundary=MyBoundary
+
+--MyBoundary
+Content-Disposition: form-data; name="file"; filename="test_suara.mp3"
+Content-Type: audio/mpeg
+
+< ./celery_worker/assets/test.mp3
+--MyBoundary--
+
+# JIKA GAGAL DI SINI: Gunakan Postman untuk langkah upload ini.
+
+
+### ------------------------------------------------------------
+### 5. Cek Status Analisis (Polling)
+### ------------------------------------------------------------
+# Ganti ID di bawah dengan 'analysis_id' yang Anda dapat dari respons Upload
+@analysisId = 0c22a0f3-38a8-4288-9aaa-306053e63b01
+
+GET {{baseUrl}}/api/analysis/{{analysisId}}
+Authorization: Bearer {{authToken}}
+
+
+### ------------------------------------------------------------
+### 6. Tes Kuota Habis (Opsional)
+### ------------------------------------------------------------
+# Ulangi request Upload (No. 4) sebanyak 4 kali untuk melihat error kuota.

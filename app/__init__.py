@@ -23,11 +23,11 @@ def create_app(config_name='default'):
         from . import models 
         
     # 1. Blueprint Auth
-    from .auth.routes import auth_bp
+    from .auth import auth_bp
     app.register_blueprint(auth_bp, url_prefix='/auth')
 
     # 2. Blueprint Analysis
-    from .analysis.routes import analysis_bp
+    from .analysis import analysis_bp
     app.register_blueprint(analysis_bp, url_prefix='/api')
 
     @app.route('/hello')

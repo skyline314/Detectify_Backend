@@ -35,16 +35,36 @@ SCALERS = {
 }
 
 # =====================================================================
-# 2. MUAT ASET (Hanya sekali saat worker dimulai)
+# 2. LAZY LOADING (Hanya dimuat saat dibutuhkan)
 # =====================================================================
-try:
-    ALL_MODELS = {name: joblib.load(path) for name, path in MODELS.items()}
-    ALL_SCALERS = {name: joblib.load(path) for name, path in SCALERS.items()}
-    FEATURE_COLS = pd.read_csv(FEATURE_LIST_FILE).drop(columns=['file_name', 'label']).columns.tolist()
-except Exception as e:
-    # Jika worker gagal memuat model, ini adalah error fatal
-    print(f"FATAL ERROR: Gagal memuat aset ML. Worker tidak akan berfungsi. Error: {e}")
-    ALL_MODELS, ALL_SCALERS, FEATURE_COLS = {}, {}, []
+
+# Inisialisasi variabel global sebagai None
+ALL_MODELS = None
+ALL_SCALERS = None
+FEATURE_COLS = None
+
+def load_models_lazy():
+    """
+    Fungsi helper untuk memuat model hanya saat pertama kali dibutuhkan.
+    Mencegah Flask memuat model saat startup (menghindari pickle error).
+    """
+    global ALL_MODELS, ALL_SCALERS, FEATURE_COLS
+    
+    if ALL_MODELS is not None:
+        return # Sudah dimuat sebelumnya, skip
+        
+    print("Loading ML Models... (Lazy Init)")
+    try:
+        ALL_MODELS = {name: joblib.load(path) for name, path in MODELS.items()}
+        ALL_SCALERS = {name: joblib.load(path) for name, path in SCALERS.items()}
+        FEATURE_COLS = pd.read_csv(FEATURE_LIST_FILE).drop(columns=['file_name', 'label']).columns.tolist()
+        print("Models Loaded Successfully.")
+    except Exception as e:
+        print(f"FATAL ERROR: Gagal memuat aset ML. Worker tidak akan berfungsi. Error: {e}")
+        # Jangan biarkan worker crash total, tapi log errornya
+        ALL_MODELS = {} 
+        ALL_SCALERS = {}
+        FEATURE_COLS = []
 
 # =====================================================================
 # 3. FUNGSI EKSTRAKSI FITUR (Disalin dari app.py Anda)
@@ -93,6 +113,10 @@ def process_audio_task(analysis_id):
     Ini adalah "Pabrik" Anda.
     """
     
+    # PENTING: Pastikan model sudah dimuat sebelum memproses
+    if ALL_MODELS is None:
+        load_models_lazy()
+    
     # 1. Dapatkan "Pekerjaan" dari Database
     job = AnalysisHistory.query.filter_by(analysis_id=analysis_id).first()
     if not job:
@@ -116,13 +140,30 @@ def process_audio_task(analysis_id):
         # 4. Ekstrak Fitur (menggunakan fungsi di atas)
         features_dict = extract_single_feature(audio_buffer)
         if features_dict is None:
-            raise Exception("Gagal mengekstrak fitur audio.")
+            raise Exception("Gagal mengekstrak fitur audio (File mungkin rusak atau format tidak didukung).")
 
         # 5. Pilih Model & Prediksi (menggunakan aset yang sudah dimuat)
-        model_name = 'SVM' # Hardcode ke SVM untuk saat ini
+        # Default ke XGBoost karena biasanya performanya terbaik, atau bisa buat logika pemilihan
+        model_name = 'XGBoost' 
         
+        # Pastikan model tersedia
+        if model_name not in ALL_MODELS:
+             # Fallback ke model pertama yang tersedia jika XGBoost gagal dimuat
+             if len(ALL_MODELS) > 0:
+                 model_name = list(ALL_MODELS.keys())[0]
+             else:
+                 raise Exception("Tidak ada model ML yang tersedia/berhasil dimuat di server.")
+
+        # Persiapan DataFrame Fitur
         df_new_all = pd.DataFrame([features_dict])
-        X_new = df_new_all[FEATURE_COLS] # Pastikan urutan fitur benar
+        
+        # Pastikan urutan kolom sama persis dengan saat training
+        # Jika ada kolom yang hilang, isi dengan 0 (safety net)
+        for col in FEATURE_COLS:
+            if col not in df_new_all.columns:
+                df_new_all[col] = 0
+        
+        X_new = df_new_all[FEATURE_COLS]
 
         model = ALL_MODELS[model_name]
         
@@ -132,6 +173,7 @@ def process_audio_task(analysis_id):
         else:
             X_input = X_new.values
         
+        # Prediksi
         prediction = model.predict(X_input)[0]
         proba = model.predict_proba(X_input)[0]
         
@@ -145,12 +187,16 @@ def process_audio_task(analysis_id):
             "model_used": model_name,
             "prediction": result_label,
             "probability_fake": prob_fake,
-            "probability_real": prob_real
+            "probability_real": prob_real,
+            "confidence_score": max(prob_fake, prob_real)
         }
         db.session.commit()
         
         # 7. Hapus File dari S3 (Pembersihan)
-        s3_client.delete_object(Bucket=bucket_name, Key=file_key)
+        try:
+            s3_client.delete_object(Bucket=bucket_name, Key=file_key)
+        except Exception as s3_e:
+            print(f"Warning: Gagal menghapus file S3 {file_key}: {s3_e}")
 
     except Exception as e:
         # Tangani Error

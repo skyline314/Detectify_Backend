@@ -23,8 +23,9 @@ boto3               # Library resmi AWS, untuk upload file ke S3 (Object Storage
 Flask-CORS          # Untuk mengizinkan [FE] (di domain berbeda) mengakses [BE]
 
 # ML
-scikit-learn  
+scikit-learn==1.3.0 
 librosa       
 joblib        
 pandas        
 numpy
+xgboost
