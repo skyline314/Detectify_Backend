@@ -1,0 +1,25 @@
+# File Rahasia (JANGAN DI-UPLOAD)
+.env
+
+# Virtual Environment & Dependencies
+venv/
+__pycache__/
+*.pyc
+
+# IDE Settings
+.vscode/
+.idea/
+
+# Database Lokal
+*.db
+*.sqlite3
+migrations/
+
+# File Sampah Sistem
+.DS_Store
+Thumbs.db
+
+# Jika Model ML Anda terlalu besar (>100MB),
+# GitHub akan menolak. Pertimbangkan untuk ignore folder model
+# celery_worker/assets/models/
+# Tapi jika <100MB, biarkan saja.

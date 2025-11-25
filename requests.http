@@ -1,0 +1,41 @@
+### 1. Registrasi Pengguna Baru
+POST http://127.0.0.1:5000/auth/register
+Content-Type: application/json
+
+{
+    "email": "test-user@example.com",
+    "password": "password123"
+}
+
+### -----------------------------------
+### 2. Login dengan Kredensial yang Benar
+POST http://127.0.0.1:5000/auth/login
+Content-Type: application/json
+
+{
+    "email": "test-user@example.com",
+    "password": "password123"
+}
+
+### -----------------------------------
+### 3. Login (Jalankan ini dulu untuk dapat token)
+POST http://127.0.0.1:5000/auth/login
+Content-Type: application/json
+
+{
+    "email": "test-user@example.com",
+    "password": "password123"
+}
+
+### -----------------------------------
+### 4. Cek History (Harus Kosong)
+### GANTI "TOKEN_ANDA_DISINI" dengan token dari #3
+GET http://127.0.0.1:5000/api/history
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MzQzNDc0MiwianRpIjoiOWE5ODFjZDktNTA2Zi00OTYzLWE3MmYtMDNlOWQ0OWJmOGI1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6ImI2ZThmMGQxLWEwN2YtNGI1Ni04NTM1LTA5MjVjYWNjYWJjNiIsIm5iZiI6MTc2MzQzNDc0MiwiY3NyZiI6IjEzNWQ1MGY3LTM2ZDctNDcwZi1iZTZmLWI4NjhlNGNlYmJiMCIsImV4cCI6MTc2MzQzNTY0Mn0.Kz8Q8xAU5wFbXVPjG26EnApEcZQw-1IWVRy5ATYCPJY
+
+### -----------------------------------
+### 5. Coba Upload (Harus Berhasil)
+### GANTI "TOKEN_ANDA_DISINI" dengan token dari #3
+### CATATAN: Ini tidak akan berhasil di REST Client, 
+### karena kita butuh upload file multi-part.
+### Kita tes GET dulu.
