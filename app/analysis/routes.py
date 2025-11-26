@@ -7,7 +7,7 @@ import uuid
 from werkzeug.utils import secure_filename
 from datetime import datetime
 
-# --- CONFIG ROUTE ---
+# CONFIG ROUTE 
 
 @analysis_bp.before_request
 @jwt_required()
@@ -18,7 +18,7 @@ def require_auth():
     """
     pass
 
-# --- ENDPOINTS ---
+# ENDPOINTS 
 
 @analysis_bp.route('/analysis/audio', methods=['POST'])
 def upload_audio():
@@ -43,7 +43,7 @@ def upload_audio():
     if not user:
         return jsonify({"error": "User tidak ditemukan"}), 404
 
-    # --- [LOGIC GATE] CEK KUOTA ---
+    # CEK KUOTA 
     if not user.can_analyze():
         usage_count = user.get_daily_usage_count()
         return jsonify({

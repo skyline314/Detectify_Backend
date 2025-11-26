@@ -4,9 +4,7 @@
 # Variabel untuk menyimpan token (VS Code REST Client mendukung @name)
 # Ganti token manual di bawah jika variabel tidak jalan di versi extension Anda.
 
-### ------------------------------------------------------------
 ### 1. Registrasi Pengguna Baru
-### ------------------------------------------------------------
 POST {{baseUrl}}/auth/register
 Content-Type: {{contentType}}
 
@@ -15,9 +13,8 @@ Content-Type: {{contentType}}
     "password": "password_rahasia_123"
 }
 
-### ------------------------------------------------------------
 ### 2. Login (Dapatkan Token JWT)
-### ------------------------------------------------------------
+
 # @name login
 POST {{baseUrl}}/auth/login
 Content-Type: {{contentType}}
@@ -27,23 +24,14 @@ Content-Type: {{contentType}}
     "password": "password_rahasia_123"
 }
 
-### Simpan Token dari Response di atas ke variabel ini (Manual Copy-Paste jika perlu)
-@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2NDA1ODg1NiwianRpIjoiNTI5MTQyNTMtOWE0OS00YmYxLWIyMzEtYjQ3MDExNDBjZTE1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6ImZlYWZmZmZmLWViNGMtNGI0NC1iYTZjLTI2MmY0NTYyMmZjMiIsIm5iZiI6MTc2NDA1ODg1NiwiY3NyZiI6IjJlMzgzNTQ1LTk0YTMtNGE5Yi1iNmE5LWU1OTg3NmNhMjUyMSIsImV4cCI6MTc2NDA1OTc1Nn0.PxtdHcOWp-R_-lSOIUIaWM4nuQVNbWfVLZtSE5LQTOg
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2NDA2MDU5MiwianRpIjoiYzdkMDBkNjUtNTc1ZS00NWU4LTk4MzItNGQzZDAxNmVhYWQ0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6ImFlOTlmZDY0LWUyZDAtNDJiZC1iOWQzLThkODQ3MzhkMTQ4OSIsIm5iZiI6MTc2NDA2MDU5MiwiY3NyZiI6IjMxZDY5ZDc4LWFmNDktNDY2ZS1hOTIzLTliNmJiMzA0YWI2NSIsImV4cCI6MTc2NDA2MTQ5Mn0.N_D95X9Z5cqzPIekev0IfomYHaBFd8poTYti3QRCt7s
 
 
-### ------------------------------------------------------------
 ### 3. Cek Profil / History (Tes Token)
-### ------------------------------------------------------------
 GET {{baseUrl}}/api/history
 Authorization: Bearer {{authToken}}
 
-
-### ------------------------------------------------------------
 ### 4. Upload Audio (Memicu Celery Worker)
-### ------------------------------------------------------------
-# CATATAN: Ganti path file di bawah dengan lokasi file audio asli di PC Anda.
-# Gunakan path relatif atau absolut tanpa spasi jika memungkinkan.
-# Jika file ada di root folder proyek, cukup gunakan < ./namafile.mp3
 POST {{baseUrl}}/api/analysis/audio
 Authorization: Bearer {{authToken}}
 Content-Type: multipart/form-data; boundary=MyBoundary
@@ -55,20 +43,10 @@ Content-Type: audio/mpeg
 < ./celery_worker/assets/test.mp3
 --MyBoundary--
 
-# JIKA GAGAL DI SINI: Gunakan Postman untuk langkah upload ini.
 
-
-### ------------------------------------------------------------
 ### 5. Cek Status Analisis (Polling)
-### ------------------------------------------------------------
 # Ganti ID di bawah dengan 'analysis_id' yang Anda dapat dari respons Upload
-@analysisId = 0c22a0f3-38a8-4288-9aaa-306053e63b01
+@analysisId = a8fbb6bc-bc36-4838-833c-2e706bda3ea9
 
 GET {{baseUrl}}/api/analysis/{{analysisId}}
 Authorization: Bearer {{authToken}}
-
-
-### ------------------------------------------------------------
-### 6. Tes Kuota Habis (Opsional)
-### ------------------------------------------------------------
-# Ulangi request Upload (No. 4) sebanyak 4 kali untuk melihat error kuota.

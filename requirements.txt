@@ -1,25 +1,25 @@
-# --- Core Framework & Server ---
+# Core Framework & Server
 Flask               # Framework web utama kita
 gunicorn            # Server WSGI (production) untuk menjalankan Flask
 python-dotenv       # Untuk memuat variabel lingkungan (.env) seperti password DB
 
-# --- Database (MySQL) & ORM ---
+# Database (MySQL) & ORM
 Flask-SQLAlchemy    # ORM (Object-Relational Mapper) untuk Flask
 PyMySQL             # Driver (konektor) murni Python untuk berbicara dengan MySQL
 Flask-Migrate       # Untuk menangani "database update" (schema migrations) via Alembic
 
-# --- Keamanan & Otentikasi ---
+# Keamanan & Otentikasi
 Flask-JWT-Extended  # Untuk membuat dan memverifikasi token login (JWT)
 bcrypt              # Untuk melakukan hashing password dengan aman
 
-# --- Alur Kerja Asinkron (Antrian & Worker) ---
+# Alur Kerja Asinkron (Antrian & Worker)
 celery              # Sistem antrian (queue) untuk memproses file audio di background
 redis               # Sering digunakan sebagai "broker" oleh Celery (alternatif: RabbitMQ)
 
-# --- File Storage ---
+# File Storage
 boto3               # Library resmi AWS, untuk upload file ke S3 (Object Storage)
 
-# --- Utilitas API ---
+# Utilitas API
 Flask-CORS          # Untuk mengizinkan [FE] (di domain berbeda) mengakses [BE]
 
 # ML
