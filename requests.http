@@ -1,9 +1,6 @@
 @baseUrl = http://127.0.0.1:5000
 @contentType = application/json
 
-# Variabel untuk menyimpan token (VS Code REST Client mendukung @name)
-# Ganti token manual di bawah jika variabel tidak jalan di versi extension Anda.
-
 ### 1. Registrasi Pengguna Baru
 POST {{baseUrl}}/auth/register
 Content-Type: {{contentType}}
@@ -14,7 +11,6 @@ Content-Type: {{contentType}}
 }
 
 ### 2. Login (Dapatkan Token JWT)
-
 # @name login
 POST {{baseUrl}}/auth/login
 Content-Type: {{contentType}}
@@ -24,14 +20,20 @@ Content-Type: {{contentType}}
     "password": "password_rahasia_123"
 }
 
-@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2NDA2MDU5MiwianRpIjoiYzdkMDBkNjUtNTc1ZS00NWU4LTk4MzItNGQzZDAxNmVhYWQ0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6ImFlOTlmZDY0LWUyZDAtNDJiZC1iOWQzLThkODQ3MzhkMTQ4OSIsIm5iZiI6MTc2NDA2MDU5MiwiY3NyZiI6IjMxZDY5ZDc4LWFmNDktNDY2ZS1hOTIzLTliNmJiMzA0YWI2NSIsImV4cCI6MTc2NDA2MTQ5Mn0.N_D95X9Z5cqzPIekev0IfomYHaBFd8poTYti3QRCt7s
+###
+# --- VARIABEL TOKEN OTOMATIS ---
+# Baris di bawah ini mengambil token dari response request 'login' di atas.
+# Pastikan kamu menjalankan request Login terlebih dahulu!
+@authToken = {{login.response.body.access_token}}
 
 
 ### 3. Cek Profil / History (Tes Token)
 GET {{baseUrl}}/api/history
 Authorization: Bearer {{authToken}}
 
+
 ### 4. Upload Audio (Memicu Celery Worker)
+# Note: Pastikan path file '< ./...' benar relatif terhadap file .http ini
 POST {{baseUrl}}/api/analysis/audio
 Authorization: Bearer {{authToken}}
 Content-Type: multipart/form-data; boundary=MyBoundary
@@ -45,8 +47,8 @@ Content-Type: audio/mpeg
 
 
 ### 5. Cek Status Analisis (Polling)
-# Ganti ID di bawah dengan 'analysis_id' yang Anda dapat dari respons Upload
-@analysisId = a8fbb6bc-bc36-4838-833c-2e706bda3ea9
+# Ganti ID di bawah secara manual dengan 'analysis_id' dari response Step 4
+@analysisId = 29183a9f-790b-4750-aca7-2d57a700ee03
 
 GET {{baseUrl}}/api/analysis/{{analysisId}}
 Authorization: Bearer {{authToken}}

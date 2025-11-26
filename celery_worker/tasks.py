@@ -5,203 +5,249 @@ import numpy as np
 import librosa
 import io
 import json
-from .celery_app import celery  # Impor instance Celery yang kita buat
+from .celery_app import celery
 from app.models import AnalysisHistory
 from app.extensions import db, s3_client
 from flask import current_app
 
 # =====================================================================
-# 1. KONFIGURASI PATH & ML (Disalin dari app.py Anda)
+# 1. KONFIGURASI PATH & KONSTANTA
 # =====================================================================
 
-# Path sekarang relatif terhadap file 'tasks.py' ini
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, 'assets')
 MODEL_DIR = os.path.join(ASSETS_DIR, 'models')
 FEATURE_LIST_FILE = os.path.join(ASSETS_DIR, 'selected_features.csv') 
 
-# PARAMETER EKSTRAKSI (Wajib Konsisten!)
 SR = 16000
 N_MFCC = 39 
 
-# Daftar Model dan Path
-MODELS = {
+# Daftar Path Model (Bisa ditambah tanpa merusak logic utama)
+MODELS_PATHS = {
     'SVM': os.path.join(MODEL_DIR, 'SVM', 'svm_detektor.pkl'),
-    'XGBoost': os.path.join(MODEL_DIR, 'XGBoost', 'xgboost_detektor.pkl')
-    # Tambahkan model lain jika perlu
+    'XGBoost': os.path.join(MODEL_DIR, 'XGBoost', 'xgboost_detektor.pkl'),
+    # 'RandomForest': os.path.join(MODEL_DIR, 'RandomForest', 'rf_detektor.pkl'), # Contoh extensi
 }
-SCALERS = {
+
+SCALERS_PATHS = {
     'SVM': os.path.join(MODEL_DIR, 'SVM', 'scaler_svm.pkl'),
 }
 
 # =====================================================================
-# 2. LAZY LOADING (Hanya dimuat saat dibutuhkan)
+# 2. MODEL REGISTRY (Strategy Pattern Implementation)
 # =====================================================================
 
-# Inisialisasi variabel global sebagai None
-ALL_MODELS = None
-ALL_SCALERS = None
-FEATURE_COLS = None
+class ModelRegistry:
+    """
+    Kelas tunggal untuk mengelola pemuatan aset ML dan prediksi.
+    Menerapkan Lazy Loading agar hemat memori saat idle.
+    """
+    def __init__(self):
+        self.models = {}
+        self.scalers = {}
+        self.feature_cols = None
+        self._is_loaded = False
 
-def load_models_lazy():
-    """
-    Fungsi helper untuk memuat model hanya saat pertama kali dibutuhkan.
-    Mencegah Flask memuat model saat startup (menghindari pickle error).
-    """
-    global ALL_MODELS, ALL_SCALERS, FEATURE_COLS
-    
-    if ALL_MODELS is not None:
-        return # Sudah dimuat sebelumnya, skip
+    def load_assets(self):
+        """Memuat semua model dan scaler ke memori hanya jika belum dimuat."""
+        if self._is_loaded:
+            return
         
-    print("Loading ML Models... (Lazy Init)")
-    try:
-        ALL_MODELS = {name: joblib.load(path) for name, path in MODELS.items()}
-        ALL_SCALERS = {name: joblib.load(path) for name, path in SCALERS.items()}
-        FEATURE_COLS = pd.read_csv(FEATURE_LIST_FILE).drop(columns=['file_name', 'label']).columns.tolist()
-        print("Models Loaded Successfully.")
-    except Exception as e:
-        print(f"FATAL ERROR: Gagal memuat aset ML. Worker tidak akan berfungsi. Error: {e}")
-        # Jangan biarkan worker crash total, tapi log errornya
-        ALL_MODELS = {} 
-        ALL_SCALERS = {}
-        FEATURE_COLS = []
+        print("[Worker] Loading ML Models into Memory...")
+        try:
+            # 1. Load Feature Columns
+            if os.path.exists(FEATURE_LIST_FILE):
+                self.feature_cols = pd.read_csv(FEATURE_LIST_FILE).drop(columns=['file_name', 'label'], errors='ignore').columns.tolist()
+            else:
+                print(f"[Worker] Warning: Feature list file not found at {FEATURE_LIST_FILE}")
+                self.feature_cols = []
+
+            # 2. Load Models
+            for name, path in MODELS_PATHS.items():
+                if os.path.exists(path):
+                    self.models[name] = joblib.load(path)
+                else:
+                    print(f"[Worker] Warning: Model {name} not found at {path}")
+
+            # 3. Load Scalers
+            for name, path in SCALERS_PATHS.items():
+                if os.path.exists(path):
+                    self.scalers[name] = joblib.load(path)
+            
+            self._is_loaded = True
+            print("[Worker] Assets Loaded Successfully.")
+            
+        except Exception as e:
+            print(f"[Worker] FATAL ERROR loading assets: {e}")
+            raise RuntimeError("Gagal memuat aset Machine Learning")
+
+    def predict(self, model_name, features_dict):
+        """
+        Melakukan prediksi menggunakan model spesifik.
+        Otomatis menangani scaling dan formatting output.
+        """
+        # Pastikan aset termuat
+        if not self._is_loaded:
+            self.load_assets()
+
+        # Fallback: Jika model yang diminta tidak ada, pakai yang tersedia pertama
+        if model_name not in self.models:
+            if not self.models:
+                raise RuntimeError("Tidak ada model ML yang tersedia di registry.")
+            model_name = list(self.models.keys())[0]
+
+        model = self.models[model_name]
+        
+        # Persiapan DataFrame
+        df_input = pd.DataFrame([features_dict])
+        
+        # Safety: Pastikan kolom fitur lengkap (isi 0 jika hilang)
+        if self.feature_cols:
+            for col in self.feature_cols:
+                if col not in df_input.columns:
+                    df_input[col] = 0
+            # Reorder kolom sesuai training
+            X = df_input[self.feature_cols]
+        else:
+            X = df_input # Fallback jika feature list gagal load
+
+        # Scaling
+        if model_name in self.scalers:
+            X = self.scalers[model_name].transform(X)
+        else:
+            X = X.values
+
+        # Inference
+        try:
+            prediction = model.predict(X)[0]
+            # Cek apakah model support probabilitas
+            if hasattr(model, "predict_proba"):
+                proba = model.predict_proba(X)[0]
+                prob_fake = float(proba[1])
+                prob_real = float(proba[0])
+            else:
+                # Fallback untuk model tanpa proba (misal SVM linear tertentu)
+                prob_fake = 1.0 if prediction == 1 else 0.0
+                prob_real = 1.0 - prob_fake
+
+            return {
+                "model_used": model_name,
+                "prediction": 'FAKE' if prediction == 1 else 'REAL',
+                "probability_fake": prob_fake,
+                "probability_real": prob_real,
+                "confidence_score": float(max(prob_fake, prob_real))
+            }
+        except Exception as e:
+            raise RuntimeError(f"Error saat inferensi model {model_name}: {e}")
+
+# Inisialisasi Global Registry
+ml_registry = ModelRegistry()
 
 # =====================================================================
-# 3. FUNGSI EKSTRAKSI FITUR (Disalin dari app.py Anda)
+# 3. FUNGSI EKSTRAKSI FITUR (Librosa Helper)
 # =====================================================================
 
 def extract_single_feature(audio_buffer):
-    """Ekstrak fitur lengkap dari data audio mentah (bytes)."""
+    """
+    Ekstrak fitur MFCC dan statistik spektral dari buffer audio.
+    """
     try:
-        # 'audio_buffer' adalah io.BytesIO, bukan file upload
         audio_buffer.seek(0)
         y, sr = librosa.load(audio_buffer, sr=SR)
     except Exception as e:
-        print(f"Error memproses audio: {e}")
+        print(f"[Worker] Error decoding audio: {e}")
         return None
 
     features = {}
     
-    # Ekstraksi MFCC
+    # 1. MFCC Extraction
     mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13) 
     mfcc_base = mfccs[:13, :]
     mfcc_delta = librosa.feature.delta(mfcc_base)
     mfcc_delta2 = librosa.feature.delta(mfcc_delta)
     full_mfccs = np.concatenate((mfcc_base, mfcc_delta, mfcc_delta2), axis=0) 
     
+    # Rata-rata setiap koefisien MFCC
     for i in range(N_MFCC):
-        features[f'mfcc_{i+1}'] = np.mean(full_mfccs[i])
+        if i < full_mfccs.shape[0]:
+            features[f'mfcc_{i+1}'] = np.mean(full_mfccs[i])
+        else:
+             features[f'mfcc_{i+1}'] = 0
 
-    # Fitur Spektral dan Temporal Lain
-    features['zcr_mean'] = np.mean(librosa.feature.zero_crossing_rate(y))
-    features['spectral_centroid_mean'] = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr))
-    features['spectral_rolloff_mean'] = np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr))
-    features['spectral_contrast_mean'] = np.mean(librosa.feature.spectral_contrast(y=y, sr=sr))
-    features['zcr_std'] = np.std(librosa.feature.zero_crossing_rate(y))
-    features['spectral_centroid_std'] = np.std(librosa.feature.spectral_centroid(y=y, sr=sr))
-    
+    # 2. Fitur Tambahan (Spectral & Temporal)
+    try:
+        features['zcr_mean'] = np.mean(librosa.feature.zero_crossing_rate(y))
+        features['spectral_centroid_mean'] = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr))
+        features['spectral_rolloff_mean'] = np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr))
+        features['spectral_contrast_mean'] = np.mean(librosa.feature.spectral_contrast(y=y, sr=sr))
+        features['zcr_std'] = np.std(librosa.feature.zero_crossing_rate(y))
+        features['spectral_centroid_std'] = np.std(librosa.feature.spectral_centroid(y=y, sr=sr))
+    except Exception as e:
+        print(f"[Worker] Warning extracting spectral features: {e}")
+
     return features
 
 # =====================================================================
-# 4. TUGAS CELERY UTAMA
+# 4. CELERY TASKS (Business Logic Execution)
 # =====================================================================
 
 @celery.task(name='process_audio_task')
 def process_audio_task(analysis_id):
     """
-    Tugas asinkron untuk memproses file audio.
-    Ini adalah "Pabrik" Anda.
+    Worker utama. Menerima ID, mengambil data, memproses via Registry, simpan hasil.
     """
+    print(f"[Worker] Starting Job: {analysis_id}")
     
-    # PENTING: Pastikan model sudah dimuat sebelum memproses
-    if ALL_MODELS is None:
-        load_models_lazy()
-    
-    # 1. Dapatkan "Pekerjaan" dari Database
+    # 1. Ambil Job Record dari DB
     job = AnalysisHistory.query.filter_by(analysis_id=analysis_id).first()
     if not job:
-        print(f"Error: Job {analysis_id} tidak ditemukan.")
+        print(f"[Worker] Error: Job ID {analysis_id} not found in DB.")
         return
 
     try:
-        # 2. Update status ke PROCESSING
+        # Update Status -> PROCESSING
         job.status = 'PROCESSING'
         db.session.commit()
 
-        # 3. Unduh File dari S3
+        # 2. Ambil File dari S3
         bucket_name = current_app.config['AWS_S3_BUCKET_NAME']
-        file_key = job.file_location # file_location akan kita isi dengan key S3
+        file_key = job.file_location
         
-        # Unduh file sebagai objek 'bytes' di memori
+        print(f"[Worker] Fetching from S3: {file_key}")
         s3_response = s3_client.get_object(Bucket=bucket_name, Key=file_key)
         audio_data_bytes = s3_response['Body'].read()
         audio_buffer = io.BytesIO(audio_data_bytes)
-        
-        # 4. Ekstrak Fitur (menggunakan fungsi di atas)
+
+        # 3. Ekstrak Fitur
+        print("[Worker] Extracting features...")
         features_dict = extract_single_feature(audio_buffer)
         if features_dict is None:
-            raise Exception("Gagal mengekstrak fitur audio (File mungkin rusak atau format tidak didukung).")
+            raise ValueError("Gagal mengekstrak fitur audio (File corrupt atau format tidak didukung librosa)")
 
-        # 5. Pilih Model & Prediksi (menggunakan aset yang sudah dimuat)
-        # Default ke XGBoost karena biasanya performanya terbaik, atau bisa buat logika pemilihan
-        model_name = 'XGBoost' 
-        
-        # Pastikan model tersedia
-        if model_name not in ALL_MODELS:
-             # Fallback ke model pertama yang tersedia jika XGBoost gagal dimuat
-             if len(ALL_MODELS) > 0:
-                 model_name = list(ALL_MODELS.keys())[0]
-             else:
-                 raise Exception("Tidak ada model ML yang tersedia/berhasil dimuat di server.")
+        # 4. Prediksi (Menggunakan Registry)
+        # Di sini kita bisa pilih model secara dinamis.
+        # Untuk sekarang default ke XGBoost, tapi logic ini 'closed' dari perubahan internal registry.
+        print("[Worker] Running Inference...")
+        result_data = ml_registry.predict('XGBoost', features_dict)
 
-        # Persiapan DataFrame Fitur
-        df_new_all = pd.DataFrame([features_dict])
-        
-        # Pastikan urutan kolom sama persis dengan saat training
-        # Jika ada kolom yang hilang, isi dengan 0 (safety net)
-        for col in FEATURE_COLS:
-            if col not in df_new_all.columns:
-                df_new_all[col] = 0
-        
-        X_new = df_new_all[FEATURE_COLS]
-
-        model = ALL_MODELS[model_name]
-        
-        if model_name in ALL_SCALERS:
-            scaler = ALL_SCALERS[model_name]
-            X_input = scaler.transform(X_new)
-        else:
-            X_input = X_new.values
-        
-        # Prediksi
-        prediction = model.predict(X_input)[0]
-        proba = model.predict_proba(X_input)[0]
-        
-        result_label = 'FAKE' if prediction == 1 else 'REAL'
-        prob_fake = float(proba[1]) # float() penting untuk serialisasi JSON
-        prob_real = float(proba[0])
-
-        # 6. Simpan Hasil ke Database
+        # 5. Simpan Hasil
         job.status = 'COMPLETED'
-        job.result_summary = {
-            "model_used": model_name,
-            "prediction": result_label,
-            "probability_fake": prob_fake,
-            "probability_real": prob_real,
-            "confidence_score": max(prob_fake, prob_real)
-        }
+        job.result_summary = result_data
         db.session.commit()
-        
-        # 7. Hapus File dari S3 (Pembersihan)
+        print(f"[Worker] Job {analysis_id} COMPLETED. Result: {result_data['prediction']}")
+
+        # 6. Cleanup (Opsional: Hapus file dari S3 untuk hemat biaya)
         try:
             s3_client.delete_object(Bucket=bucket_name, Key=file_key)
-        except Exception as s3_e:
-            print(f"Warning: Gagal menghapus file S3 {file_key}: {s3_e}")
+            print("[Worker] S3 Cleanup done.")
+        except Exception as cleanup_error:
+            print(f"[Worker] Warning S3 Cleanup: {cleanup_error}")
 
     except Exception as e:
-        # Tangani Error
+        print(f"[Worker] Job Failed: {e}")
         db.session.rollback()
+        
+        # Update Status -> FAILED
         job.status = 'FAILED'
         job.error_message = str(e)
         db.session.commit()
-        print(f"Error processing job {analysis_id}: {e}")

@@ -1,0 +1,7 @@
+redis-cli ping
+
+venv\Scripts\Activate  
+
+celery -A celery_worker.celery_app.celery worker --loglevel=info --pool=solo -Q audio_queue
+
+flask run

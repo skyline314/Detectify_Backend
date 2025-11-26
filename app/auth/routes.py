@@ -54,31 +54,36 @@ def login_user():
     Mengembalikan: JSON { "access_token": "..." }
     """
     try:
-        data = request.get_json()
-        if not data or not data.get('email') or not data.get('password'):
+        # FIX: Tambahkan silent=True agar tidak error 400 jika JSON kosong/salah
+        # Jika gagal parse, data akan bernilai None, bukan crash.
+        data = request.get_json(silent=True)
+        
+        if not data:
+             return jsonify({"error": "Format JSON tidak valid atau Header Content-Type salah"}), 400
+
+        if not data.get('email') or not data.get('password'):
             return jsonify({"error": "Email dan password diperlukan"}), 400
 
+        # ... (Sisa kode logika login sama persis) ...
         email = data.get('email')
         password = data.get('password')
 
-        # validasi 1: cari pengguna berdasarkan email
         user = User.query.filter_by(email=email).first()
 
         if not user:
-            return jsonify({"error": "Email atau password salah"}), 401 # 401 Unauthorized
+            return jsonify({"error": "Email atau password salah"}), 401 
 
-        # validasi 2: cek hash password 
         password_bytes = password.encode('utf-8')
         password_hash_bytes = user.password_hash.encode('utf-8')
 
         if not bcrypt.checkpw(password_bytes, password_hash_bytes):
-            return jsonify({"error": "Email atau password salah"}), 401 # 401 Unauthorized
+            return jsonify({"error": "Email atau password salah"}), 401 
 
-        # sukses: buat token JWT 
-        # 'identity' kita gunakan user_id karena unik
         access_token = create_access_token(identity=user.user_id)
         
         return jsonify(access_token=access_token), 200
 
     except Exception as e:
+        # Log error sebenarnya ke terminal agar kamu bisa debug
+        print(f"ERROR LOGIN: {e}") 
         return jsonify({"error": "Terjadi kesalahan internal", "details": str(e)}), 500
