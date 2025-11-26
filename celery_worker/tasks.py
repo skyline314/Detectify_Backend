@@ -25,7 +25,7 @@ N_MFCC = 39
 # Daftar Path Model (Bisa ditambah tanpa merusak logic utama)
 MODELS_PATHS = {
     'SVM': os.path.join(MODEL_DIR, 'SVM', 'svm_detektor.pkl'),
-    'XGBoost': os.path.join(MODEL_DIR, 'XGBoost', 'xgboost_detektor.pkl'),
+    # 'XGBoost': os.path.join(MODEL_DIR, 'XGBoost', 'xgboost_detektor.pkl'),
     # 'RandomForest': os.path.join(MODEL_DIR, 'RandomForest', 'rf_detektor.pkl'), # Contoh extensi
 }
 
@@ -130,8 +130,11 @@ class ModelRegistry:
                 prob_fake = 1.0 if prediction == 1 else 0.0
                 prob_real = 1.0 - prob_fake
 
+            display_name = "Detectify_Audio_v1"
             return {
-                "model_used": model_name,
+                "model_used": display_name,       # Frontend melihat ini (Konsisten)
+                "model_version": "1.0.0",         # Versioning
+                "internal_algo": model_name,      # Opsional: Untuk debug developer saja (bisa dihapus kalau mau rahasia total)
                 "prediction": 'FAKE' if prediction == 1 else 'REAL',
                 "probability_fake": prob_fake,
                 "probability_real": prob_real,
@@ -228,7 +231,7 @@ def process_audio_task(analysis_id):
         # Di sini kita bisa pilih model secara dinamis.
         # Untuk sekarang default ke XGBoost, tapi logic ini 'closed' dari perubahan internal registry.
         print("[Worker] Running Inference...")
-        result_data = ml_registry.predict('XGBoost', features_dict)
+        result_data = ml_registry.predict('SVM', features_dict)
 
         # 5. Simpan Hasil
         job.status = 'COMPLETED'

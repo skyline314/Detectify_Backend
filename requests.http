@@ -48,7 +48,7 @@ Content-Type: audio/mpeg
 
 ### 5. Cek Status Analisis (Polling)
 # Ganti ID di bawah secara manual dengan 'analysis_id' dari response Step 4
-@analysisId = 29183a9f-790b-4750-aca7-2d57a700ee03
+@analysisId = 32d6d915-b3d5-46f3-994a-a0cc056a816f
 
 GET {{baseUrl}}/api/analysis/{{analysisId}}
 Authorization: Bearer {{authToken}}
